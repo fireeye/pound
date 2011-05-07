@@ -268,7 +268,7 @@ extern int  SOL_TCP;
 #endif /* NO_EXTERNALS */
 
 #ifndef MAXBUF
-#define MAXBUF      4096
+#define MAXBUF      16384
 #endif
 
 #define MAXHEADERS  128
