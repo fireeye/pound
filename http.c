@@ -1,6 +1,6 @@
 /*
  * Pound - the reverse-proxy load-balancer
- * Copyright (C) 2002-2007 Apsis GmbH
+ * Copyright (C) 2002-2010 Apsis GmbH
  *
  * This file is part of Pound.
  *
@@ -9,7 +9,7 @@
  * the Free Software Foundation; either version 3 of the License, or
  * (at your option) any later version.
  * 
- * Foobar is distributed in the hope that it will be useful,
+ * Pound is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
@@ -22,7 +22,6 @@
  * P.O.Box
  * 8707 Uetikon am See
  * Switzerland
- * Tel: +41-44-920 4904
  * EMail: roseg@apsis.ch
  */
 
@@ -126,7 +125,7 @@ get_line(BIO *const in, char *const buf, const int bufsize)
         case -1:
             return 1;
         default:
-            for(i = n_read; i < bufsize; i++)
+            for(i = n_read; i < bufsize && buf[i]; i++)
                 if(buf[i] == '\n' || buf[i] == '\r') {
                     buf[i] = '\0';
                     return 0;
@@ -487,15 +486,15 @@ thr_http(void *arg)
     int                 cl_11, be_11, res, chunked, n, sock, no_cont, skip, conn_closed, force_10, sock_proto;
     LISTENER            *lstn;
     SERVICE             *svc;
-    BACKEND             *backend, *cur_backend;
-    struct addrinfo     from_host;
+    BACKEND             *backend, *cur_backend, *old_backend;
+    struct addrinfo     from_host, z_addr;
     struct sockaddr_storage from_host_addr;
     BIO                 *cl, *be, *bb, *b64;
     X509                *x509;
     char                request[MAXBUF], response[MAXBUF], buf[MAXBUF], url[MAXBUF], loc_path[MAXBUF], **headers,
                         headers_ok[MAXHEADERS], v_host[MAXBUF], referer[MAXBUF], u_agent[MAXBUF], u_name[MAXBUF],
                         caddr[MAXBUF], req_time[LOG_TIME_SIZE], s_res_bytes[LOG_BYTES_SIZE], *mh;
-    SSL                 *ssl;
+    SSL                 *ssl, *be_ssl;
     long                cont, res_bytes;
     regmatch_t          matches[4];
     struct linger       l;
@@ -782,13 +781,23 @@ thr_http(void *arg)
                 clean_all();
                 pthread_exit(NULL);
             }
-            if(connect_nb(sock, &backend->addr, backend->to) < 0) {
+            if(connect_nb(sock, &backend->addr, backend->conn_to) < 0) {
                 str_be(buf, MAXBUF - 1, backend);
                 logmsg(LOG_WARNING, "(%lx) backend %s connect: %s", pthread_self(), buf, strerror(errno));
                 shutdown(sock, 2);
                 close(sock);
-                kill_be(svc, backend, BE_KILL);
-                if((backend = get_backend(svc, &from_host, url, &headers[1])) == NULL) {
+                /*
+                 * kill the back-end only if no HAport is defined for it
+                 * otherwise allow the HAport mechanism to do its job
+                 */
+                memset(&z_addr, 0, sizeof(z_addr));
+                if(memcmp(&(backend->ha_addr), &(z_addr), sizeof(z_addr)) == 0)
+                    kill_be(svc, backend, BE_KILL);
+                /*
+                 * ...but make sure we don't get into a loop with the same back-end
+                 */
+                old_backend = backend;
+                if((backend = get_backend(svc, &from_host, url, &headers[1])) == NULL || backend == old_backend) {
                     addr2str(caddr, MAXBUF - 1, &from_host, 1);
                     logmsg(LOG_NOTICE, "(%lx) e503 no back-end \"%s\" from %s", pthread_self(), request, caddr);
                     err_reply(cl, h503, lstn->err503);
@@ -824,6 +833,35 @@ thr_http(void *arg)
             if(backend->to > 0) {
                 BIO_set_callback_arg(be, (char *)&backend->to);
                 BIO_set_callback(be, bio_callback);
+            }
+            if(backend->ctx != NULL) {
+                if((be_ssl = SSL_new(backend->ctx)) == NULL) {
+                    logmsg(LOG_WARNING, "(%lx) be SSL_new: failed", pthread_self());
+                    err_reply(cl, h503, lstn->err503);
+                    free_headers(headers);
+                    clean_all();
+                    pthread_exit(NULL);
+                }
+                SSL_set_bio(be_ssl, be, be);
+                if((bb = BIO_new(BIO_f_ssl())) == NULL) {
+                    logmsg(LOG_WARNING, "(%lx) BIO_new(Bio_f_ssl()) failed", pthread_self());
+                    err_reply(cl, h503, lstn->err503);
+                    free_headers(headers);
+                    clean_all();
+                    pthread_exit(NULL);
+                }
+                BIO_set_ssl(bb, be_ssl, BIO_CLOSE);
+                BIO_set_ssl_mode(bb, 1);
+                be = bb;
+                if(BIO_do_handshake(be) <= 0) {
+                    str_be(buf, MAXBUF - 1, backend);
+                    logmsg(LOG_NOTICE, "BIO_do_handshake with %s failed: %s", buf,
+                        ERR_error_string(ERR_get_error(), NULL));
+                    err_reply(cl, h503, lstn->err503);
+                    free_headers(headers);
+                    clean_all();
+                    pthread_exit(NULL);
+                }
             }
             if((bb = BIO_new(BIO_f_buffer())) == NULL) {
                 logmsg(LOG_WARNING, "(%lx) e503 BIO_new(buffer) server failed", pthread_self());
@@ -888,6 +926,7 @@ thr_http(void *arg)
                     logmsg(LOG_WARNING, "(%lx) e500 error write HTTPSHeader to %s: %s (%.3f sec)",
                         pthread_self(), buf, strerror(errno), (end_req - start_req) / 1000000.0);
                     err_reply(cl, h500, lstn->err500);
+                    free_headers(headers);
                     clean_all();
                     pthread_exit(NULL);
                 }
@@ -1103,7 +1142,7 @@ thr_http(void *arg)
         /* if we have a redirector */
         if(cur_backend->be_type) {
             memset(buf, 0, sizeof(buf));
-            if(cur_backend->redir_req)
+            if(!cur_backend->redir_req)
                 snprintf(buf, sizeof(buf) - 1, "%s%s", cur_backend->url, url);
             else 
                 strncpy(buf, cur_backend->url, sizeof(buf) - 1);

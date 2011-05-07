@@ -1,6 +1,6 @@
 /*
  * Pound - the reverse-proxy load-balancer
- * Copyright (C) 2002-2007 Apsis GmbH
+ * Copyright (C) 2002-2010 Apsis GmbH
  *
  * This file is part of Pound.
  *
@@ -9,7 +9,7 @@
  * the Free Software Foundation; either version 3 of the License, or
  * (at your option) any later version.
  * 
- * Foobar is distributed in the hope that it will be useful,
+ * Pound is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
@@ -22,7 +22,6 @@
  * P.O.Box
  * 8707 Uetikon am See
  * Switzerland
- * Tel: +41-44-920 4904
  * EMail: roseg@apsis.ch
  */
 
@@ -95,6 +94,11 @@
 #include    <sys/un.h>
 #else
 #error "Pound needs sys/un.h"
+#endif
+
+#ifndef UNIX_PATH_MAX
+/* on Linux this is defined in linux/un.h rather than sys/un.h - go figure */
+#define UNIX_PATH_MAX   108
 #endif
 
 #if HAVE_NETINET_IN_H
@@ -175,10 +179,14 @@
 #error "Pound needs signal.h"
 #endif
 
+#if HAVE_LIBPCREPOSIX
 #if HAVE_PCREPOSIX_H
 #include    <pcreposix.h>
 #elif HAVE_PCRE_PCREPOSIX
 #include    <pcre/pcreposix.h>
+#else
+#error "You have libpcreposix, but the header files are missing. Use --disable-pcreposix"
+#endif
 #elif HAVE_REGEX_H
 #include    <regex.h>
 #else
@@ -287,10 +295,12 @@ typedef struct _backend {
     int                 be_type;    /* 0 if real back-end, otherwise code (301, 302/default, 307) */
     struct addrinfo     addr;       /* IPv4/6 address */
     int                 priority;   /* priority */
-    int                 to;
+    int                 to;         /* read/write time-out */
+    int                 conn_to;    /* connection time-out */
     struct addrinfo     ha_addr;    /* HA address/port */
     char                *url;       /* for redirectors */
     int                 redir_req;  /* the redirect should include the request path */
+    SSL_CTX             *ctx;       /* CTX for SSL connections */
     pthread_mutex_t     mut;        /* mutex for this back-end */
     int                 n_requests; /* number of requests seen */
     double              t_requests; /* time to answer these requests */
@@ -325,8 +335,8 @@ typedef struct _service {
     pthread_mutex_t     mut;        /* mutex for this service */
     SESS_TYPE           sess_type;
     int                 sess_ttl;   /* session time-to-live */
+    regex_t             sess_start; /* pattern to identify the session data */
     regex_t             sess_pat;   /* pattern to match the session data */
-    char                *sess_parm; /* session cookie or parameter */
     LHASH               *sessions;  /* currently active sessions */
     int                 dynscale;   /* true if the back-ends should be dynamically rescaled */
     int                 disabled;   /* true if the service is disabled */
@@ -523,6 +533,11 @@ extern void config_parse(const int, char **const);
  * return a pre-generated RSA key
  */
 extern RSA  *RSA_tmp_callback(SSL *, int, int);
+
+/*
+ * return a pre-generated RSA key
+ */
+extern DH   *DH_tmp_callback(SSL *, int, int);
 
 /*
  * expiration stuff
