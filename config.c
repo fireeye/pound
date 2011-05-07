@@ -1040,7 +1040,7 @@ parse_HTTPS(FILE *const f_conf)
                 exit(1);
             }
             SSL_CTX_set_mode(res->ctx, SSL_MODE_AUTO_RETRY);
-            SSL_CTX_set_options(res->ctx, SSL_OP_ALL);
+            SSL_CTX_set_options(res->ctx, SSL_OP_ALL | SSL_OP_NO_SSLv2 | SSL_OP_NO_TLSv1);
             sprintf(lin, "%d-Pound-%ld", getpid(), random());
             SSL_CTX_set_session_id_context(res->ctx, (unsigned char *)lin, strlen(lin));
             SSL_CTX_set_tmp_rsa_callback(res->ctx, RSA_tmp_callback);
