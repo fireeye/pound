@@ -81,7 +81,7 @@ redirect_reply(BIO *const c, const char *url, const int code)
  * Read and write some binary data
  */
 static int
-copy_bin(BIO *const cl, BIO *const be, long cont, long *res_bytes, const int no_write)
+copy_bin(BIO *const cl, BIO *const be, long long cont, long long *res_bytes, const int no_write)
 {
     char        buf[MAXBUF];
     int         res;
@@ -164,10 +164,11 @@ strip_eol(char *lin)
  * Copy chunked
  */
 static int
-copy_chunks(BIO *const cl, BIO *const be, long *res_bytes, const int no_write, const long max_size)
+copy_chunks(BIO *const cl, BIO *const be, long long *res_bytes, const int no_write, const long max_size)
 {
     char        buf[MAXBUF];
-    long        cont, tot_size;
+    long long   cont;
+    long long   tot_size;
     regmatch_t  matches[2];
     int         has_eol, res;
 
@@ -458,10 +459,10 @@ cur_time(void)
  * Apache log-file-style number format
  */
 static void
-log_bytes(char *res, const long cnt)
+log_bytes(char *res, const long long cnt)
 {
     if(cnt > 0L)
-        snprintf(res, LOG_BYTES_SIZE - 1, "%ld", cnt);
+        snprintf(res, LOG_BYTES_SIZE - 1, "%lld", cnt);
     else
         strcpy(res, "-");
     return;
@@ -495,7 +496,7 @@ thr_http(void *arg)
                         headers_ok[MAXHEADERS], v_host[MAXBUF], referer[MAXBUF], u_agent[MAXBUF], u_name[MAXBUF],
                         caddr[MAXBUF], req_time[LOG_TIME_SIZE], s_res_bytes[LOG_BYTES_SIZE], *mh;
     SSL                 *ssl, *be_ssl;
-    long                cont, res_bytes;
+    long long            cont, res_bytes;
     regmatch_t          matches[4];
     struct linger       l;
     double              start_req, end_req;
@@ -663,7 +664,7 @@ thr_http(void *arg)
                 if(chunked)
                     headers_ok[n] = 0;
                 else
-                    cont = atol(buf);
+                    cont = atoll(buf);
                 break;
             case HEADER_ILLEGAL:
                 if(lstn->log_level > 0) {
@@ -715,7 +716,7 @@ thr_http(void *arg)
         /* possibly limited request size */
         if(lstn->max_req > 0L && cont > 0L && cont > lstn->max_req) {
             addr2str(caddr, MAXBUF - 1, &from_host, 1);
-            logmsg(LOG_NOTICE, "(%lx) e501 request too large (%ld) from %s", pthread_self(), cont, caddr);
+            logmsg(LOG_NOTICE, "(%lx) e501 request too large (%lld) from %s", pthread_self(), cont, caddr);
             err_reply(cl, h501, lstn->err501);
             free_headers(headers);
             clean_all();
@@ -1207,7 +1208,7 @@ thr_http(void *arg)
                     }
                     break;
                 case HEADER_CONTENT_LENGTH:
-                    cont = atol(buf);
+                    cont = atoll(buf);
                     break;
                 case HEADER_LOCATION:
                     if(v_host[0] && need_rewrite(lstn->rewr_loc, buf, loc_path, lstn, cur_backend)) {
