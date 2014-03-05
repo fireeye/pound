@@ -9,6 +9,8 @@ servers that do not offer it natively. Pound is distributed
 under the GPL - no warranty, it's free to use, copy and
 give away.
 
+[Installation](#installation)
+
 What Pound is
 --------------------
 
