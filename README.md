@@ -9,7 +9,29 @@ servers that do not offer it natively. Pound is distributed
 under the GPL - no warranty, it's free to use, copy and
 give away.
 
-[Installation](#installation)
+Index
+-----------------
+
+1. [What Pound is](#what-pound-is)
+- [What Pound is not](#what-pound-is-not)
+- [Status](#status)
+- [Installation](#installation)
+- [Copyright](#copyright)
+- [Contact](#contact)
+- [Mailing List](#mailing-list)
+- [Zope](#zope)
+- [Virtual Hosts](#virtual-hosts-in-general)
+- [Virtual Hosts and HTTPS](#virtual-hosts-and-https)
+- [Virtual Hosts in Zope](#virtual-hosts-in-zope)
+- [Sessions](#sessions)
+- [Request Logging](#request-logging)
+- [HTTPS Certificates](#https-certificates)
+- [Threads and limits](#threads-and-limits)
+- [Similar systems](#similar-systems)
+- [Dedicated servers](#dedicated-servers)
+- [WebDAV](#webdav)
+- [Other issues](#other-issues)
+- [Acknowledgments](#acknowledgments)
 
 What Pound is
 --------------------
